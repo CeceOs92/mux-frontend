@@ -17,6 +17,7 @@ const TEAM_ERROR = {
 
 type TeamErrorCode = (typeof TEAM_ERROR)[keyof typeof TEAM_ERROR];
 
+
 function isMockAllowed(): boolean {
   return process.env.NODE_ENV !== 'production';
 }
