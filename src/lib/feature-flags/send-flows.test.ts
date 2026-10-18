@@ -10,7 +10,7 @@ import {
 	type SendFlowFlags,
 } from "./send-flows";
 
-const TESTNET_ON: SendFlowFlags = {
+const baseFlags: SendFlowFlags = {
 	enabled: true,
 	killSwitch: false,
 	mainnetEnabled: false,
@@ -67,14 +67,15 @@ describe("parseOptInFlag", () => {
 		expect(parseOptInFlag("true")).toBe(true);
 		expect(parseOptInFlag("1")).toBe(true);
 		expect(parseOptInFlag(" TRUE ")).toBe(true);
-		expect(parseOptInFlag("yes")).toBe(false);
+		expect(parseOptInFlag("false")).toBe(false);
 		expect(parseOptInFlag("0")).toBe(false);
+		expect(parseOptInFlag("yes")).toBe(false);
 		expect(parseOptInFlag(undefined)).toBe(false);
 	});
 });
 
 describe("parseKillSwitch", () => {
-	it("fails closed on anything but false/0", () => {
+	it("fails closed on anything but false/0/unset", () => {
 		expect(parseKillSwitch(undefined)).toBe(false);
 		expect(parseKillSwitch("")).toBe(false);
 		expect(parseKillSwitch("false")).toBe(false);
@@ -90,6 +91,27 @@ describe("parseNetwork", () => {
 		expect(parseNetwork("futurenet")).toBe("futurenet");
 		expect(parseNetwork("mainnet")).toBe("mainnet");
 		expect(parseNetwork("public")).toBe("mainnet");
+		expect(parseNetwork("PUBLIC")).toBe("mainnet");
+		expect(parseNetwork(undefined)).toBeNull();
+		expect(parseNetwork("")).toBeNull();
+	});
+});
+
+	});
+});
+
+describe("parseNetwork", () => {
+	it("maps known networks and aliases", () => {
+		expect(parseNetwork("testnet")).toBe("testnet");
+		expect(parseNetwork("futurenet")).toBe("futurenet");
+		expect(parseNetwork("mainnet")).toBe("mainnet");
+		expect(parseNetwork("public")).toBe("mainnet");
+		expect(parseNetwork("PUBLIC")).toBe("mainnet");
+	});
+
+	it("returns null for unknown or missing values", () => {
+		expect(parseNetwork(undefined)).toBeNull();
+		expect(parseNetwork("")).toBeNull();
 		expect(parseNetwork("devnet")).toBeNull();
 		expect(parseNetwork(undefined)).toBeNull();
 	});
@@ -104,6 +126,23 @@ describe("readServerSendFlowFlags", () => {
 		expect(flags.enabled).toBe(true);
 		expect(flags.mainnetEnabled).toBe(true);
 		expect(flags.network).toBe("mainnet");
+	});
+});
+
+describe("readServerSendFlowFlags", () => {
+	it("reads MUX_* flags and configured network", () => {
+		const flags = readServerSendFlowFlags({
+			MUX_SEND_FLOWS_ENABLED: "true",
+			MUX_SEND_KILL_SWITCH: "false",
+			MUX_SEND_MAINNET_ENABLED: "1",
+			MUX_STELLAR_NETWORK: "public",
+		});
+		expect(flags).toEqual({
+			enabled: true,
+			killSwitch: false,
+			mainnetEnabled: true,
+			network: "mainnet",
+		});
 	});
 
 	it("ignores NEXT_PUBLIC_* vars", () => {
@@ -156,6 +195,8 @@ describe("readClientSendFlowFlags", () => {
 		expect(result.code).toBe(SEND_GATE_CODES.NETWORK_MISCONFIGURED);
 	});
 });
+	});
+});
 
 describe("evaluateSendFlowGate", () => {
 	it("allows a testnet send when enabled", () => {
@@ -203,11 +244,54 @@ describe("evaluateSendFlowGate", () => {
 		});
 	});
 
+	it("allows mainnet sends when mainnet is enabled", () => {
+		expect(
+			evaluateSendFlowGate({
+				...baseFlags,
+				network: "mainnet",
+				mainnetEnabled: true,
+			}),
+		).toEqual({
+			allowed: true,
+			code: SEND_GATE_CODES.OK,
+			network: "mainnet",
+		});
+	});
+
 	it("rejects a requested network that does not match", () => {
 		const result = evaluateSendFlowGate(TESTNET_ON, "mainnet");
 		expect(result).toEqual({
 			allowed: false,
 			code: SEND_GATE_CODES.NETWORK_MISMATCH,
+		});
+	});
+
+	it("accepts 'public' as a mainnet alias when configured for mainnet", () => {
+		expect(
+			evaluateSendFlowGate(
+				{ ...baseFlags, network: "mainnet", mainnetEnabled: true },
+				"public",
+			),
+		).toEqual({
+			allowed: true,
+			code: SEND_GATE_CODES.OK,
+			network: "mainnet",
+		});
+	});
+
+	it("rejects 'public' with a network mismatch when configured for testnet", () => {
+		expect(
+			evaluateSendFlowGate({ ...baseFlags, network: "testnet" }, "public"),
+		).toEqual({ allowed: false, code: SEND_GATE_CODES.NETWORK_MISMATCH });
+	});
+
+	it("normalizes mixed-case requested networks before comparison", () => {
+		expect(
+			evaluateSendFlowGate({ ...baseFlags, network: "testnet" }, "TESTNET"),
+		).toEqual({
+			allowed: true,
+			code: SEND_GATE_CODES.OK,
+			network: "testnet",
 		});
 	});
 });
